@@ -21,12 +21,12 @@ def activate_device(path: str):
     try:
         current_device.ungrab()
     except OSError:
-        pass
+        False
     current_device = new_device
     try:
         current_device.grab()
     except OSError:
-        pass
+        False
     return current_device
 
 

@@ -71,9 +71,15 @@ def main():
         print(k + ": " + v)
     print(len(sys.argv))
     if len(sys.argv) == 2:
-        devices = [evdev.InputDevice(path) for path in evdev.list_devices()]
-        for d in devices:
-            print(d)
+        match sys.argv[1]:
+            case 'lsdevices':
+                devices = [evdev.InputDevice(path) for path in evdev.list_devices()]
+                for d in devices:
+                    print(d)
+            case 'foreground':
+                daemon_main(cfig)
+            case other:
+                print("Unknown Subcommand")
 
         exit(0)
 
@@ -127,7 +133,14 @@ def daemon_main(cfig):
         if not vinput_t.is_alive():
             vinput_t = threading.Thread(target=uinput_thread, args=(evqueue,))
             vinput_t.start()
-
+        ## Something is releasing grab, i can't figure out what
+        ## py3-evdev doesn't provide EBUSY for iograbs
+        ## so we make sure we are holding the grab before we read events
+        ## even though this way of doing it is a hax
+        try:
+            current_device.grab()
+        except OSError:
+            pass
         event = current_device.read_one()
         if event is not None:
             if event.type == ecodes.EV_KEY:
@@ -153,9 +166,11 @@ def startup_proc(devices, target_device):
     for d in devices:
         if d.name == target_device:
             current_device = activate_device(d.path)
-    if current_device is None:
+    if not current_device:
+        send_notice("early start failed")
         return False
     else:
+        send_notice(f"{current_device.name} at {current_device.path} Activated")
         return True
 
 
@@ -210,11 +225,25 @@ def uds_thread(sock):
 def dispatch_event(e: evdev.KeyEvent):
     global active_config
     global evqueue
+
     presses = [ecodes.KEY_P, ecodes.KEY_I, ecodes.KEY_U, ecodes.KEY_S]
-    print(" what is this: " + str(e.keystate) + " and is it " + str(e.key_down))
-    print(str(int(e.scancode) == ecodes.KEY_M))
+    if active_config.get("mirror_jacket"):
+        if e.scancode == ecodes.KEY_UP:
+            evqueue.put((ecodes.EV_KEY, ecodes.KEY_W, e.keystate))
+        if e.scancode == ecodes.KEY_DOWN:
+            evqueue.put((ecodes.EV_KEY, ecodes.KEY_S, e.keystate))
+        if e.scancode == ecodes.KEY_LEFT:
+            evqueue.put((ecodes.EV_KEY,ecodes.KEY_A, e.keystate ))
+        if e.scancode == ecodes.KEY_RIGHT:
+            evqueue.put((ecodes.EV_KEY, ecodes.KEY_D, e.keystate))
+
     if (e.keystate == e.key_up) and e.scancode == ecodes.KEY_M:
-        send_notice(active_config["message"])
+        send_notice("Mirror Jacket On")
+        active_config["mirror_jacket"] = 1
+    if (e.keystate == e.key_up) and e.scancode == ecodes.KEY_Q:
+        active_config["mirror_jacket"] = 0
+        send_notice("Mirror Jacket off")
+        
     if (e.keystate == e.key_down) and e.scancode == ecodes.KEY_P:
         send_notice("Party Time, conga line")
         for k in presses:
