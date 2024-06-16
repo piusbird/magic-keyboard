@@ -1,16 +1,35 @@
 """
 Where all the evdev related functions go
 """
-
+from time import sleep
 import evdev
-from evdev import ecodes
+from evdev import ecodes, InputDevice
 from queue import Queue
 
 DOWN = 1
 UP = 0
 HOLD = 2
 
+OFF = 0
+ON = 1
 STOP_VALUE = 65535
+STOCK_LEDS = [(ecodes.LED_NUML, OFF), (ecodes.LED_CAPSL, OFF ), (ecodes.LED_SCROLLL, OFF)]
+
+def leds_loop(dev: InputDevice, hack: bool):
+    leds = dev.leds(verbose=True)
+    if not hack:
+        for light in reversed(leds):
+            dev.set_led(ecodes.ecodes[light[0]], ON)
+            sleep(0.25)
+            dev.set_led(ecodes.ecodes[light[0]], OFF)
+            sleep(0.25)
+    else:
+        for light in reversed(STOCK_LEDS):
+            dev.set_led(light[0], ON)
+            sleep(0.25)
+            dev.set_led(light[0], OFF)
+            sleep(0.20)
+
 
 
 def activate_device(path: str):

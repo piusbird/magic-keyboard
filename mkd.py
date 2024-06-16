@@ -49,6 +49,7 @@ from mkd.evdev import (
     activate_device,
     release_device,
     STOP_VALUE,
+    leds_loop,
 )
 
 stop_flag = threading.Event()
@@ -145,13 +146,23 @@ def daemon_main(cfig):
         if event is not None:
             if event.type == ecodes.EV_KEY:
                 dispatch_event(evdev.util.categorize(event))
+        else: 
+            # this is just a visual indicator that the main thread is awake
+            # could also be useful in anti cheat circumvention
 
+            if evqueue.empty():
+                if len(current_device.leds()) == 0:
+                    leds_loop(current_device, True)
+                else:
+                    leds_loop(current_device, False)
+                
     if lisnr.is_alive():
         lisnr.join()  # make sure on sigterm we clean this up
     if vinput_t.is_alive():
         vinput_t.join()
     try:
         do_cleanup()
+        current_device.ungrab()
         exit(0)
     except Exception as e:
         print(e)
@@ -165,6 +176,7 @@ def startup_proc(devices, target_device):
         return False
     for d in devices:
         if d.name == target_device:
+            print(d.leds(verbose=True))
             current_device = activate_device(d.path)
     if not current_device:
         send_notice("early start failed")
