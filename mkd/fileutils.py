@@ -11,6 +11,7 @@ def write_pid(file_path):
     fp.write(str(os.getpid()))
     return True
 
+
 def pid_lock(U_path):
     file_path = os.path.expanduser(U_path)
     if os.path.exists(file_path):
@@ -18,11 +19,12 @@ def pid_lock(U_path):
         if os.path.exists(os.path.join("/proc", target_pid)):
             return True
         else:
-            
+
             return False
     else:
-        
+
         return False
+
 
 def get_config(U_path: str):
     file_path = os.path.expanduser(U_path)
@@ -37,5 +39,3 @@ def get_config(U_path: str):
         return cfig_data
     else:
         return {}
-
-    

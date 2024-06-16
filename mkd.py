@@ -2,25 +2,25 @@
 
 # Copyright (c) 2024 Matt Arnold
 
-# Permission is hereby granted, free of charge, to any person 
-# obtaining a copy of this software and 
-# associated documentation files (the "Software"), 
-# to deal in the Software without restriction, including without limitation 
-# the rights to use, copy, modify, merge, publish, distribute, sublicense, 
-# and/or sell copies of the Software, and to permit persons to whom 
+# Permission is hereby granted, free of charge, to any person
+# obtaining a copy of this software and
+# associated documentation files (the "Software"),
+# to deal in the Software without restriction, including without limitation
+# the rights to use, copy, modify, merge, publish, distribute, sublicense,
+# and/or sell copies of the Software, and to permit persons to whom
 # the Software is furnished to do so, subject to the following conditions:
 
-# The above copyright notice and this permission notice 
+# The above copyright notice and this permission notice
 # shall be included in all copies or substantial portions of the Software.
 
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, 
-# EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE 
-# WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE 
-# AND NONINFRINGEMENT. 
-# IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, 
-# DAMAGES OR OTHER LIABILITY, 
-# WHETHER IN AN ACTION OF CONTRACT,  TORT OR OTHERWISE, 
-# ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE 
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+# EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
+# WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE
+# AND NONINFRINGEMENT.
+# IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+# DAMAGES OR OTHER LIABILITY,
+# WHETHER IN AN ACTION OF CONTRACT,  TORT OR OTHERWISE,
+# ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
 # OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 import sys
@@ -33,6 +33,7 @@ from time import sleep
 import socket
 import threading
 import gi
+
 gi.require_version("Notify", "0.7")
 from gi.repository import Notify, GLib
 import evdev
@@ -40,15 +41,22 @@ import syslog
 from evdev import InputDevice, categorize, ecodes, UInput
 from mkd.ioutils import NullFile, SyslogFile
 from mkd.fileutils import write_pid, pid_lock, get_config
-from mkd.evdev import syn_key_press, syn_key_hold, syn_key_release, activate_device, release_device
+from mkd.evdev import (
+    syn_key_press,
+    syn_key_hold,
+    syn_key_release,
+    activate_device,
+    release_device,
+)
 
 stop_flag = threading.Event()
 evqueue = queue.Queue()
 active_config = None
 daemon_tmpfiles = ["~/.mkd.sock", "~/.mkd.pid"]
-actual_send_notice = lambda m: Notify.Notification.new("magic-keyboard",m, "dialog-information").show()
+actual_send_notice = lambda m: Notify.Notification.new(
+    "magic-keyboard", m, "dialog-information"
+).show()
 current_device = None
-
 
 
 def main():
@@ -61,10 +69,9 @@ def main():
         devices = [evdev.InputDevice(path) for path in evdev.list_devices()]
         for d in devices:
             print(d)
-        
+
         exit(0)
 
-    
     pid = os.fork()
 
     if pid:
@@ -81,7 +88,6 @@ def main():
         sys.stderr = NullFile()
         signal.signal(signal.SIGTERM, handle_sigterm)
         daemon_main(cfig)
-        
 
 
 def daemon_main(cfig):
@@ -105,24 +111,24 @@ def daemon_main(cfig):
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     sock.bind(sockpath)
     sock.listen(1)
-    
+
     lisnr = threading.Thread(target=uds_thread, args=(sock,))
     vinput_t = threading.Thread(target=uinput_thread)
     while not stop_flag.is_set():
-            if not lisnr.is_alive():
-                lisnr = threading.Thread(target=uds_thread, args=(sock,))
-                lisnr.start()
-            if not vinput_t.is_alive():
-                vinput_t = threading.Thread(target=uinput_thread)
-                vinput_t.start()
+        if not lisnr.is_alive():
+            lisnr = threading.Thread(target=uds_thread, args=(sock,))
+            lisnr.start()
+        if not vinput_t.is_alive():
+            vinput_t = threading.Thread(target=uinput_thread)
+            vinput_t.start()
 
-            event = current_device.read_one()
-            if event is not None:
-                if event.type == ecodes.EV_KEY:
-                    dispatch_event(evdev.util.categorize(event))
-            
+        event = current_device.read_one()
+        if event is not None:
+            if event.type == ecodes.EV_KEY:
+                dispatch_event(evdev.util.categorize(event))
+
     if lisnr.is_alive():
-        lisnr.join() # make sure on sigterm we clean this up
+        lisnr.join()  # make sure on sigterm we clean this up
     if vinput_t.is_alive():
         vinput_t.join()
     do_cleanup()
@@ -155,23 +161,18 @@ def uinput_thread():
     ui.close()
 
 
-
-
-
-
-
 def uds_thread(sock):
     Notify.init("Mkd Background process")
     global active_config
     global current_device
-    if stop_flag.is_set(): # we don't want to cause problems in cleanup
+    if stop_flag.is_set():  # we don't want to cause problems in cleanup
         return
 
     connection, client_address = sock.accept()
     data = connection.recv(256)
-    sdata = data.decode('utf-8')
-    
-    if len(data.split()) < 1: # nothing ventured, nothing gained
+    sdata = data.decode("utf-8")
+
+    if len(data.split()) < 1:  # nothing ventured, nothing gained
         connection.close()
         return
 
@@ -196,18 +197,10 @@ def uds_thread(sock):
             connection.close()
 
 
-
-        
-    
-
-
-
-
-
 def dispatch_event(e: evdev.KeyEvent):
     global active_config
     presses = [ecodes.KEY_P, ecodes.KEY_I, ecodes.KEY_U, ecodes.KEY_S]
-    print( " what is this: " + str(e.keystate) + " and is it " + str(e.key_down))
+    print(" what is this: " + str(e.keystate) + " and is it " + str(e.key_down))
     print(str(int(e.scancode) == ecodes.KEY_M))
     if (e.keystate == e.key_up) and e.scancode == ecodes.KEY_M:
         send_notice(active_config["message"])
@@ -215,10 +208,6 @@ def dispatch_event(e: evdev.KeyEvent):
         send_notice("Party Time, conga line")
         for k in presses:
             syn_key_press(k, evqueue)
-        
-    
-
-
 
 
 def handle_sigterm(num, fr):
@@ -229,7 +218,7 @@ def handle_sigterm(num, fr):
 
 def do_cleanup():
     if current_device is not None:
-        try: 
+        try:
             current_device.ungrab()
         except OSError:
             pass
@@ -238,6 +227,7 @@ def do_cleanup():
             os.unlink(p)
     exit(0)
 
+
 def send_notice(msg):
     try:
         actual_send_notice(msg)
@@ -245,13 +235,5 @@ def send_notice(msg):
         syslog.syslog(syslog.LOG_INFO, msg)
 
 
-
-
-    
-
-
-
-
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
