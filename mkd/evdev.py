@@ -10,6 +10,8 @@ DOWN = 1
 UP = 0
 HOLD = 2
 
+STOP_VALUE = 65535
+
 
 def activate_device(path: str):
     current_device = None

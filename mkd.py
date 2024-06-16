@@ -38,6 +38,7 @@ gi.require_version("Notify", "0.7")
 from gi.repository import Notify, GLib
 import evdev
 import syslog
+import multiprocessing
 from evdev import InputDevice, categorize, ecodes, UInput
 from mkd.ioutils import NullFile, SyslogFile
 from mkd.fileutils import write_pid, pid_lock, get_config
@@ -47,6 +48,7 @@ from mkd.evdev import (
     syn_key_release,
     activate_device,
     release_device,
+    STOP_VALUE,
 )
 
 stop_flag = threading.Event()
@@ -111,15 +113,16 @@ def daemon_main(cfig):
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     sock.bind(sockpath)
     sock.listen(1)
+    do_cleanup()
 
     lisnr = threading.Thread(target=uds_thread, args=(sock,))
-    vinput_t = threading.Thread(target=uinput_thread)
+    vinput_t = threading.Thread(target=uinput_thread, args=(evqueue,))
     while not stop_flag.is_set():
         if not lisnr.is_alive():
             lisnr = threading.Thread(target=uds_thread, args=(sock,))
             lisnr.start()
         if not vinput_t.is_alive():
-            vinput_t = threading.Thread(target=uinput_thread)
+            vinput_t = threading.Thread(target=uinput_thread, args=(evqueue,))
             vinput_t.start()
 
         event = current_device.read_one()
@@ -131,8 +134,12 @@ def daemon_main(cfig):
         lisnr.join()  # make sure on sigterm we clean this up
     if vinput_t.is_alive():
         vinput_t.join()
-    do_cleanup()
-    sys.exit(127)
+    try:
+        do_cleanup()
+        exit(0)
+    except Exception as e:
+        print(e)
+        multiprocessing.current_process().kill()
 
 
 def startup_proc(devices, target_device):
@@ -149,13 +156,15 @@ def startup_proc(devices, target_device):
         return True
 
 
-def uinput_thread():
+def uinput_thread(evqueue):
     Notify.init("mkd Vinput")
-    global evqueue
+
     ui = UInput()
     send_notice("input synth ready")
     while not stop_flag.is_set():
         keydata = evqueue.get()
+        if type(keydata) == int and keydata == STOP_VALUE:
+            break
         ui.write(*keydata)
         ui.syn()
     ui.close()
@@ -189,9 +198,7 @@ def uds_thread(sock):
             connection.close()
         case b"quit":
             connection.close()
-            stop_flag.set()
-            release_device(current_device.path)
-            do_cleanup()
+            multiprocessing.current_process().terminate()
         case other:
             connection.sendall(b"unknown command\n")
             connection.close()
@@ -199,6 +206,7 @@ def uds_thread(sock):
 
 def dispatch_event(e: evdev.KeyEvent):
     global active_config
+    global evqueue
     presses = [ecodes.KEY_P, ecodes.KEY_I, ecodes.KEY_U, ecodes.KEY_S]
     print(" what is this: " + str(e.keystate) + " and is it " + str(e.key_down))
     print(str(int(e.scancode) == ecodes.KEY_M))
@@ -212,7 +220,9 @@ def dispatch_event(e: evdev.KeyEvent):
 
 def handle_sigterm(num, fr):
     global current_device
+    evqueue.put(STOP_VALUE)
     release_device(current_device.path)
+    print("Released Device Setting Stop flag")
     stop_flag.set()
 
 
@@ -225,7 +235,6 @@ def do_cleanup():
     for p in daemon_tmpfiles:
         if os.path.exists(p):
             os.unlink(p)
-    exit(0)
 
 
 def send_notice(msg):
