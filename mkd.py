@@ -65,7 +65,7 @@ current_device = None
 def main():
     if os.getuid() == 0 or os.geteuid == 0:
         print("Do not run me as root, add urself to input")
-        exit(0x0f)
+        exit(0x0F)
     cfig = get_config("~/.mkd.conf")
     print("Config Values")
     for k, v in cfig.items():
@@ -73,11 +73,11 @@ def main():
     print(len(sys.argv))
     if len(sys.argv) == 2:
         match sys.argv[1]:
-            case 'lsdevices':
+            case "lsdevices":
                 devices = [evdev.InputDevice(path) for path in evdev.list_devices()]
                 for d in devices:
                     print(d)
-            case 'foreground':
+            case "foreground":
                 daemon_main(cfig)
             case other:
                 print("Unknown Subcommand")
@@ -146,16 +146,17 @@ def daemon_main(cfig):
         if event is not None:
             if event.type == ecodes.EV_KEY:
                 dispatch_event(evdev.util.categorize(event))
-        else: 
+        else:
             # this is just a visual indicator that the main thread is awake
             # could also be useful in anti cheat circumvention
+            # TODO: Put this in a config varaible
 
             if evqueue.empty():
                 if len(current_device.leds()) == 0:
                     leds_loop(current_device, True)
                 else:
                     leds_loop(current_device, False)
-                
+
     if lisnr.is_alive():
         lisnr.join()  # make sure on sigterm we clean this up
     if vinput_t.is_alive():
@@ -245,7 +246,7 @@ def dispatch_event(e: evdev.KeyEvent):
         if e.scancode == ecodes.KEY_DOWN:
             evqueue.put((ecodes.EV_KEY, ecodes.KEY_S, e.keystate))
         if e.scancode == ecodes.KEY_LEFT:
-            evqueue.put((ecodes.EV_KEY,ecodes.KEY_A, e.keystate ))
+            evqueue.put((ecodes.EV_KEY, ecodes.KEY_A, e.keystate))
         if e.scancode == ecodes.KEY_RIGHT:
             evqueue.put((ecodes.EV_KEY, ecodes.KEY_D, e.keystate))
 
@@ -255,7 +256,7 @@ def dispatch_event(e: evdev.KeyEvent):
     if (e.keystate == e.key_up) and e.scancode == ecodes.KEY_Q:
         active_config["mirror_jacket"] = 0
         send_notice("Mirror Jacket off")
-        
+
     if (e.keystate == e.key_down) and e.scancode == ecodes.KEY_P:
         send_notice("Party Time, conga line")
         for k in presses:

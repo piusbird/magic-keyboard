@@ -1,6 +1,7 @@
 """
 Where all the evdev related functions go
 """
+
 from time import sleep
 import evdev
 from evdev import ecodes, InputDevice
@@ -13,8 +14,16 @@ HOLD = 2
 OFF = 0
 ON = 1
 STOP_VALUE = 65535
-STOCK_LEDS = [(ecodes.LED_NUML, OFF), (ecodes.LED_CAPSL, OFF ), (ecodes.LED_SCROLLL, OFF)]
+STOCK_LEDS = [
+    (ecodes.LED_NUML, OFF),
+    (ecodes.LED_CAPSL, OFF),
+    (ecodes.LED_SCROLLL, OFF),
+]
 
+
+## LED idle loop for anti cheat circumvention, and asthetics
+## TODO: Make the time interval a gaussian distribution around mu of 0.25
+## will make it slightly faster, in most cases
 def leds_loop(dev: InputDevice, hack: bool):
     leds = dev.leds(verbose=True)
     if not hack:
@@ -29,7 +38,6 @@ def leds_loop(dev: InputDevice, hack: bool):
             sleep(0.25)
             dev.set_led(light[0], OFF)
             sleep(0.20)
-
 
 
 def activate_device(path: str):
