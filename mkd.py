@@ -25,6 +25,7 @@
 
 import sys
 import os
+import queue
 import tomllib
 import syslog
 import signal
@@ -35,14 +36,32 @@ import gi
 gi.require_version("Notify", "0.7")
 from gi.repository import Notify, GLib
 import evdev
-from evdev import InputDevice, categorize, ecodes
+from evdev import InputDevice, categorize, ecodes, UInput
 
 stop_flag = threading.Event()
-Notify.init("Magic Keyboard")
+evqueue = queue.Queue()
 active_config = None
 daemon_tmpfiles = ["~/.mkd.sock", "~/.mkd.pid"]
 send_notice = lambda m: Notify.Notification.new("magic-keyboard",m, "dialog-information").show()
 current_device = None
+def uinput_thread():
+    Notify.init("mkd Vinput")
+    global evqueue
+    ui = UInput()
+    send_notice("input synth ready")
+    while not stop_flag.is_set():
+        keydata = evqueue.get()
+        ui.write(*keydata)
+        ui.syn()
+    ui.close()
+
+
+def syn_key_press(key: int):
+    down_event = (ecodes.EV_KEY, key, 1)
+    up_event = (ecodes.EV_KEY, key, 0)
+    evqueue.put(down_event)
+    evqueue.put(up_event)
+
 def do_cleanup():
     if current_device is not None:
         try: 
@@ -55,9 +74,9 @@ def do_cleanup():
     exit(0)
 
 
+
 def handle_socket(sock):
     Notify.init("Mkd Background process")
-    send_notice = lambda m: Notify.Notification.new("magic-keyboard",m, "dialog-information").show()
     global active_config
     if stop_flag.is_set(): # we don't want to cause problems in cleanup
         return
@@ -84,6 +103,8 @@ def handle_socket(sock):
         case b"quit":
             connection.close()
             stop_flag.set()
+            release_current_device()
+            do_cleanup()
         case other:
             connection.sendall(b"unknown command\n")
             connection.close()
@@ -101,14 +122,15 @@ def pid_lock():
         if os.path.exists(os.path.join("/proc", target_pid)):
             return True
         else:
-            write_pid(file_path)
+            
             return False
     else:
-        write_pid(file_path)
+        
         return False
         
     
 def handle_sigterm(num, fr):
+    release_current_device()
     stop_flag.set()
 
 def get_config():
@@ -142,39 +164,59 @@ def activate_device(path: str):
         stop_flag.set()
     send_notice(f"{current_device.name} at {current_device.path} Active Grab")
 
+def release_current_device():
+    global current_device
+    if current_device is not None:
+        try: 
+            current_device.ungrab()
+        except OSError:
+            pass
+    current_device = None
+
 
 def dispatch_event(e: evdev.KeyEvent):
     global active_config
+    presses = [ecodes.KEY_P, ecodes.KEY_I, ecodes.KEY_U, ecodes.KEY_S]
     send_notice = lambda m: Notify.Notification.new("magic-keyboard",m, "dialog-information").show()
     print( " what is this: " + str(e.keystate) + " and is it " + str(e.key_down))
     print(str(int(e.scancode) == ecodes.KEY_M))
     if (e.keystate == e.key_up) and e.scancode == ecodes.KEY_M:
         send_notice(active_config["message"])
+    if (e.keystate == e.key_down) and e.scancode == ecodes.KEY_P:
+        send_notice("Party Time, conga line")
+        for k in presses:
+            syn_key_press(k)
+        
     
 
 
-    
 
-async def event_read(dev: InputDevice):
-    async for event in dev.read_loop():
-            if event.type == ecodes.EV_KEY:
-                dispatch_event(categorize(event))
-
+def startup_proc(devices, target_device):
+    if os.getuid() == 0 or os.geteuid() == 0:
+        print("Do not run this as root")
+        return False
+    for d in devices:
+        if d.name == target_device:
+            activate_device(d.path)
+    if current_device is None:
+        return False
+    else:
+        return True
 
 def daemon_main(cfig):
     global active_config
     global current_device
-    send_notice = lambda m: Notify.Notification.new("magic-keyboard",m, "dialog-information").show()
-    active_config = cfig
     Notify.init("Magic Keyboard")
+    active_config = cfig
     devices = [evdev.InputDevice(path) for path in evdev.list_devices()]
-    if active_config["grab_device"]:
-        for d in devices:
-            if d.name == active_config["grab_device"]:
-                activate_device(d.path)
-        if current_device is None:
-            send_notice("Device not found shutting down")
-            stop_flag.set()
+    if startup_proc(devices, active_config["grab_device"]):
+        pidpath = os.path.expanduser("~/.mkd.pid")
+        write_pid(pidpath)
+    else:
+        send_notice("Startup failed")
+        if len(devices) == 0:
+            print("Add urself to input group")
+        exit(2)
 
     sockpath = os.path.expanduser("~/.mkd.sock")
     if os.path.exists(sockpath):
@@ -183,22 +225,27 @@ def daemon_main(cfig):
     sock.bind(sockpath)
     sock.listen(1)
     
-    x = threading.Thread(target=handle_socket, args=(sock,))
+    lisnr = threading.Thread(target=handle_socket, args=(sock,))
+    vinput_t = threading.Thread(target=uinput_thread)
     while not stop_flag.is_set():
-            if not x.is_alive():
-                x = threading.Thread(target=handle_socket, args=(sock,))
-                x.start()
-            msg = active_config["message"] + " "
-            ourpid = os.getpid()
-            msg += str(ourpid)
+            if not lisnr.is_alive():
+                lisnr = threading.Thread(target=handle_socket, args=(sock,))
+                lisnr.start()
+            if not vinput_t.is_alive():
+                vinput_t = threading.Thread(target=uinput_thread)
+                vinput_t.start()
+
             event = current_device.read_one()
             if event is not None:
                 if event.type == ecodes.EV_KEY:
                     dispatch_event(evdev.util.categorize(event))
             
-    if x.is_alive():
-        x.join() # make sure on sigterm we clean this up
+    if lisnr.is_alive():
+        lisnr.join() # make sure on sigterm we clean this up
+    if vinput_t.is_alive():
+        vinput_t.join()
     do_cleanup()
+    sys.exit(127)
 
     
 
@@ -215,7 +262,8 @@ def main():
         devices = [evdev.InputDevice(path) for path in evdev.list_devices()]
         for d in devices:
             print(d)
-            exit(0)
+        
+        exit(0)
 
     
     pid = os.fork()
@@ -226,9 +274,8 @@ def main():
         os.umask(0)
         os.setpgrp()
         if pid_lock():
-            print("daemon running")
+            print("already running")
             exit(1)
-        print("Successful daemonize")
 
         #sys.stdout.close()
         #sys.stdin.close()
