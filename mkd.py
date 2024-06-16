@@ -62,6 +62,9 @@ current_device = None
 
 
 def main():
+    if os.getuid() == 0 or os.geteuid == 0:
+        print("Do not run me as root, add urself to input")
+        exit(0x0f)
     cfig = get_config("~/.mkd.conf")
     print("Config Values")
     for k, v in cfig.items():
