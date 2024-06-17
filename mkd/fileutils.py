@@ -39,3 +39,7 @@ def get_config(U_path: str):
         return cfig_data
     else:
         return {}
+
+class HaltRequested(Exception):
+    pass
+

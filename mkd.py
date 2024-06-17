@@ -41,7 +41,7 @@ import syslog
 import multiprocessing
 from evdev import InputDevice, categorize, ecodes, UInput
 from mkd.ioutils import NullFile, SyslogFile
-from mkd.fileutils import write_pid, pid_lock, get_config
+from mkd.fileutils import write_pid, pid_lock, get_config, HaltRequested
 from mkd.evdev import (
     syn_key_press,
     syn_key_hold,
@@ -53,6 +53,7 @@ from mkd.evdev import (
 )
 
 stop_flag = threading.Event()
+halt_in_progress = threading.Event()
 evqueue = queue.Queue()
 active_config = None
 daemon_tmpfiles = ["~/.mkd.sock", "~/.mkd.pid"]
@@ -115,7 +116,7 @@ def daemon_main(cfig):
         send_notice("Startup failed")
         if len(devices) == 0:
             print("Add urself to input group")
-        exit(2)
+        sys.exit(2)
 
     sockpath = os.path.expanduser("~/.mkd.sock")
     if os.path.exists(sockpath):
@@ -123,17 +124,18 @@ def daemon_main(cfig):
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     sock.bind(sockpath)
     sock.listen(1)
-    do_cleanup()
 
     lisnr = threading.Thread(target=uds_thread, args=(sock,))
     vinput_t = threading.Thread(target=uinput_thread, args=(evqueue,))
     while not stop_flag.is_set():
-        if not lisnr.is_alive():
+        if not lisnr.is_alive() and not halt_in_progress.is_set():
             lisnr = threading.Thread(target=uds_thread, args=(sock,))
             lisnr.start()
-        if not vinput_t.is_alive():
+        if not vinput_t.is_alive() and not halt_in_progress.is_set():
             vinput_t = threading.Thread(target=uinput_thread, args=(evqueue,))
             vinput_t.start()
+        if halt_in_progress.is_set():
+            break
         ## Something is releasing grab, i can't figure out what
         ## py3-evdev doesn't provide EBUSY for iograbs
         ## so we make sure we are holding the grab before we read events
@@ -156,19 +158,28 @@ def daemon_main(cfig):
                     leds_loop(current_device, True)
                 else:
                     leds_loop(current_device, False)
-
-    if lisnr.is_alive():
-        lisnr.join()  # make sure on sigterm we clean this up
+    send_notice("Shutting Down")
+    Notify.uninit()
+    vinput_t.join(5)
+    lisnr.join(5)
     if vinput_t.is_alive():
-        vinput_t.join()
+        sys.stderr.write("vinput lives")
+    if lisnr.is_alive():
+        sys.stderr.write("Socket lives")
     try:
-        do_cleanup()
         current_device.ungrab()
-        exit(0)
+    except OSError:
+        pass
+    try:
+        sock.shutdown(socket.SHUT_RDWR)
     except Exception as e:
-        print(e)
-        multiprocessing.current_process().kill()
-
+        sys.stderr.write(str(e))
+        ourpid = os.getpgid()
+        os.killpg(ourpid, 11) # this stops it RIGHT THE FORK NOW
+    sock.close()
+    do_cleanup()
+    sys.exit(0)
+    
 
 def startup_proc(devices, target_device):
     global current_device
@@ -188,11 +199,15 @@ def startup_proc(devices, target_device):
 
 
 def uinput_thread(evqueue):
+    if halt_in_progress.is_set():
+        raise HaltRequested("Halt")
     Notify.init("mkd Vinput")
 
     ui = UInput()
     send_notice("input synth ready")
     while not stop_flag.is_set():
+        if halt_in_progress.is_set():
+            raise HaltRequested("Halt")
         keydata = evqueue.get()
         if type(keydata) == int and keydata == STOP_VALUE:
             break
@@ -202,6 +217,8 @@ def uinput_thread(evqueue):
 
 
 def uds_thread(sock):
+    if halt_in_progress.is_set():
+        raise HaltRequested("Halt")
     Notify.init("Mkd Background process")
     global active_config
     global current_device
@@ -216,20 +233,24 @@ def uds_thread(sock):
         connection.close()
         return
 
-    print(data)
+    
     match data.split()[0]:
         case b"rehash":
-            active_config = get_config("~/..mkd.conf")
+            active_config = get_config("~/.mkd.conf")
+            connection.sendall(b"OK\n")
             connection.close()
         case b"msg":
             if len(sdata) > 4:
                 send_notice(sdata[4:])
+                connection.sendall(b"OK\n")
+                
             else:
                 connection.sendall(b"bad syntax\n")
             connection.close()
-        case b"quit":
-            connection.close()
-            multiprocessing.current_process().terminate()
+        case b"halt":
+            connection.sendall("OK\n")
+            pid = os.getpid()
+            os.kill(pid, signal.SIGTERM)
         case other:
             connection.sendall(b"unknown command\n")
             connection.close()
@@ -265,10 +286,12 @@ def dispatch_event(e: evdev.KeyEvent):
 
 def handle_sigterm(num, fr):
     global current_device
+    halt_in_progress.set()
     evqueue.put(STOP_VALUE)
     release_device(current_device.path)
     print("Released Device Setting Stop flag")
     stop_flag.set()
+
 
 
 def do_cleanup():
@@ -278,8 +301,12 @@ def do_cleanup():
         except OSError:
             pass
     for p in daemon_tmpfiles:
-        if os.path.exists(p):
-            os.unlink(p)
+        actual = os.path.expanduser(p)
+        if os.path.exists(actual):
+            try:
+                os.unlink(actual)
+            except Exception as e:
+                sys.stderr.write(e)
 
 
 def send_notice(msg):
