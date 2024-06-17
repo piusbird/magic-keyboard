@@ -70,7 +70,7 @@ def main():
     cfig = get_config("~/.mkd.conf")
     print("Config Values")
     for k, v in cfig.items():
-        print(k + ": " + v)
+        print(k + ": " + str(v))
     print(len(sys.argv))
     if len(sys.argv) == 2:
         match sys.argv[1]:
@@ -153,7 +153,7 @@ def daemon_main(cfig):
             # could also be useful in anti cheat circumvention
             # TODO: Put this in a config varaible
 
-            if evqueue.empty():
+            if evqueue.empty() and active_config['idle_bounce']:
                 if len(current_device.leds()) == 0:
                     leds_loop(current_device, True)
                 else:
@@ -259,6 +259,8 @@ def uds_thread(sock):
 def dispatch_event(e: evdev.KeyEvent):
     global active_config
     global evqueue
+    if active_config.get('idle_bounce') == None:
+        active_config['idle_bounce'] = False
 
     presses = [ecodes.KEY_P, ecodes.KEY_I, ecodes.KEY_U, ecodes.KEY_S]
     if active_config.get("mirror_jacket"):
@@ -270,7 +272,10 @@ def dispatch_event(e: evdev.KeyEvent):
             evqueue.put((ecodes.EV_KEY, ecodes.KEY_A, e.keystate))
         if e.scancode == ecodes.KEY_RIGHT:
             evqueue.put((ecodes.EV_KEY, ecodes.KEY_D, e.keystate))
-
+    
+    if (e.keystate == e.key_up) and e.scancode == ecodes.KEY_F2:
+        send_notice("Tea Time")
+        active_config['idle_bounce'] = not active_config['idle_bounce']
     if (e.keystate == e.key_up) and e.scancode == ecodes.KEY_M:
         send_notice("Mirror Jacket On")
         active_config["mirror_jacket"] = 1
