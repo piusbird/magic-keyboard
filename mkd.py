@@ -153,7 +153,7 @@ def daemon_main(cfig):
             # could also be useful in anti cheat circumvention
             # TODO: Put this in a config varaible
 
-            if evqueue.empty() and active_config['idle_bounce']:
+            if evqueue.empty() and active_config["idle_bounce"]:
                 if len(current_device.leds()) == 0:
                     leds_loop(current_device, True)
                 else:
@@ -175,11 +175,11 @@ def daemon_main(cfig):
     except Exception as e:
         sys.stderr.write(str(e))
         ourpid = os.getpgid()
-        os.killpg(ourpid, 11) # this stops it RIGHT THE FORK NOW
+        os.killpg(ourpid, 11)  # this stops it RIGHT THE FORK NOW
     sock.close()
     do_cleanup()
     sys.exit(0)
-    
+
 
 def startup_proc(devices, target_device):
     global current_device
@@ -233,7 +233,6 @@ def uds_thread(sock):
         connection.close()
         return
 
-    
     match data.split()[0]:
         case b"rehash":
             active_config = get_config("~/.mkd.conf")
@@ -243,7 +242,7 @@ def uds_thread(sock):
             if len(sdata) > 4:
                 send_notice(sdata[4:])
                 connection.sendall(b"OK\n")
-                
+
             else:
                 connection.sendall(b"bad syntax\n")
             connection.close()
@@ -259,8 +258,8 @@ def uds_thread(sock):
 def dispatch_event(e: evdev.KeyEvent):
     global active_config
     global evqueue
-    if active_config.get('idle_bounce') == None:
-        active_config['idle_bounce'] = False
+    if active_config.get("idle_bounce") == None:
+        active_config["idle_bounce"] = False
 
     presses = [ecodes.KEY_P, ecodes.KEY_I, ecodes.KEY_U, ecodes.KEY_S]
     if active_config.get("mirror_jacket"):
@@ -272,10 +271,10 @@ def dispatch_event(e: evdev.KeyEvent):
             evqueue.put((ecodes.EV_KEY, ecodes.KEY_A, e.keystate))
         if e.scancode == ecodes.KEY_RIGHT:
             evqueue.put((ecodes.EV_KEY, ecodes.KEY_D, e.keystate))
-    
+
     if (e.keystate == e.key_up) and e.scancode == ecodes.KEY_F2:
         send_notice("Tea Time")
-        active_config['idle_bounce'] = not active_config['idle_bounce']
+        active_config["idle_bounce"] = not active_config["idle_bounce"]
     if (e.keystate == e.key_up) and e.scancode == ecodes.KEY_M:
         send_notice("Mirror Jacket On")
         active_config["mirror_jacket"] = 1
@@ -296,7 +295,6 @@ def handle_sigterm(num, fr):
     release_device(current_device.path)
     print("Released Device Setting Stop flag")
     stop_flag.set()
-
 
 
 def do_cleanup():

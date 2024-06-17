@@ -40,6 +40,6 @@ def get_config(U_path: str):
     else:
         return {}
 
+
 class HaltRequested(Exception):
     pass
-
