@@ -76,9 +76,17 @@ def main():
         print("Config Syntax Error")
         exit(2)
     if cfig.get("layout_file"):
-        status, errors  = read_script(cfig["script_file"])
+        status, errors  = read_script(cfig["layout_file"])
         if status == 0:
-            dispatch_event = mk_evread
+        
+            exec(compile(errors, "layout", 'exec'))
+            print(vars)
+            if 'mk_evread' in vars():
+                dispatch_event = vars()['mk_evread']
+            else:
+                print("Script loader error revert")
+                dispatch_event = default_evread 
+                
         else:
             print("Syntax error in script file\n" + errors)
             exit(status)
@@ -128,6 +136,9 @@ def daemon_main(cfig):
     Notify.init("Magic Keyboard")
     active_config = cfig
     devices = [evdev.InputDevice(path) for path in evdev.list_devices()]
+   
+    
+    
     if startup_proc(devices, active_config["grab_device"]):
         pidpath = os.path.expanduser("~/.mkd.pid")
         write_pid(pidpath)
@@ -143,20 +154,26 @@ def daemon_main(cfig):
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     sock.bind(sockpath)
     sock.listen(1)
-
     lisnr = threading.Thread(target=uds_thread, args=(sock,))
     vinput_t = threading.Thread(target=uinput_thread, args=(evqueue,))
     lisnr.daemon = True
     vinput_t.daemon = True
 
+    
+
     error_flag = 0
     while not stop_flag.is_set():
+        script_context = ContextDict()
+        script_context['evqueue'] = evqueue
+        script_context['active_config'] = active_config
+        script_context['send_notice'] = send_notice
+        if halt_in_progress.is_set():
+            break
         if not lisnr.is_alive() and not halt_in_progress.is_set():
             lisnr.start()
         if not vinput_t.is_alive() and not halt_in_progress.is_set():
             vinput_t.start()
-        if halt_in_progress.is_set():
-            break
+        
         ## Something is releasing grab, i can't figure out what
         ## py3-evdev doesn't provide EBUSY for iograbs
         ## so we make sure we are holding the grab before we read events
@@ -185,12 +202,10 @@ def daemon_main(cfig):
             error_flag = 1
             break
 
-        ctx = ContextDict()
-        ctx['evqueue'] = evqueue
-        ctx['active_config'] = active_config
+        
         if event is not None:
             if event.type == ecodes.EV_KEY:
-                dispatch_event(evdev.util.categorize(event), ctx)
+                dispatch_event(evdev.util.categorize(event), script_context)
         else:
             # this is just a visual indicator that the main thread is awake
             # could also be useful in anti cheat circumvention
@@ -209,6 +224,8 @@ def daemon_main(cfig):
     
     if error_flag != 0:
         send_notice("breakout due to error, see log for more")
+        halt_in_progress.set()
+        stop_flag.set()
     
     send_notice("Shutting Down")
     Notify.uninit()

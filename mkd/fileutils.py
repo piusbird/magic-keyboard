@@ -47,8 +47,7 @@ def read_script(u_path: str):
         
     try:
         ocode = compile(code, u_path, 'exec')
-        exec(ocode)
-        return 0, ""
+        return 0, code
     except SyntaxError as e:
         return 1, str(e)
     except ValueError as e: 
