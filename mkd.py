@@ -76,21 +76,21 @@ def main():
         print("Config Syntax Error")
         exit(2)
     if cfig.get("layout_file"):
-        status, errors  = read_script(cfig["layout_file"])
+        status, errors = read_script(cfig["layout_file"])
         if status == 0:
-        
-            exec(compile(errors, "layout", 'exec'))
+
+            exec(compile(errors, "layout", "exec"))
             print(vars)
-            if 'mk_evread' in vars():
-                dispatch_event = vars()['mk_evread']
+            if "mk_evread" in vars():
+                dispatch_event = vars()["mk_evread"]
             else:
                 print("Script loader error revert")
-                dispatch_event = default_evread 
-                
+                dispatch_event = default_evread
+
         else:
             print("Syntax error in script file\n" + errors)
             exit(status)
-        
+
     else:
         print("layout file not found falling back to default")
         dispatch_event = default_evread
@@ -136,9 +136,7 @@ def daemon_main(cfig):
     Notify.init("Magic Keyboard")
     active_config = cfig
     devices = [evdev.InputDevice(path) for path in evdev.list_devices()]
-   
-    
-    
+
     if startup_proc(devices, active_config["grab_device"]):
         pidpath = os.path.expanduser("~/.mkd.pid")
         write_pid(pidpath)
@@ -159,21 +157,19 @@ def daemon_main(cfig):
     lisnr.daemon = True
     vinput_t.daemon = True
 
-    
-
     error_flag = 0
     while not stop_flag.is_set():
         script_context = ContextDict()
-        script_context['evqueue'] = evqueue
-        script_context['active_config'] = active_config
-        script_context['send_notice'] = send_notice
+        script_context["evqueue"] = evqueue
+        script_context["active_config"] = active_config
+        script_context["send_notice"] = send_notice
         if halt_in_progress.is_set():
             break
         if not lisnr.is_alive() and not halt_in_progress.is_set():
             lisnr.start()
         if not vinput_t.is_alive() and not halt_in_progress.is_set():
             vinput_t.start()
-        
+
         ## Something is releasing grab, i can't figure out what
         ## py3-evdev doesn't provide EBUSY for iograbs
         ## so we make sure we are holding the grab before we read events
@@ -193,16 +189,15 @@ def daemon_main(cfig):
         # Saint Thomas  is coming to town
         # he sees pids when they're sleeping
         # he knows they want to wake
-        # he knows zombies are not good 
+        # he knows zombies are not good
         # so a zombie let's not make
-        try: 
+        try:
             event = current_device.read_one()
         except OSError:
             sys.stderr.write("Lost Device")
             error_flag = 1
             break
 
-        
         if event is not None:
             if event.type == ecodes.EV_KEY:
                 dispatch_event(evdev.util.categorize(event), script_context)
@@ -221,12 +216,12 @@ def daemon_main(cfig):
                     sys.stderr.write(str(e))
                     error_flag = 1
                     break
-    
+
     if error_flag != 0:
         send_notice("breakout due to error, see log for more")
         halt_in_progress.set()
         stop_flag.set()
-    
+
     send_notice("Shutting Down")
     Notify.uninit()
     vinput_t.join(5)
@@ -328,8 +323,6 @@ def uds_thread(sock):
         case other:
             connection.sendall(b"unknown command\n")
             connection.close()
-
-
 
 
 def handle_sigterm(num, fr):

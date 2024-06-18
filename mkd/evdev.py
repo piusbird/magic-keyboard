@@ -9,7 +9,6 @@ from queue import Queue
 from .misc import LostDeviceError
 
 
-
 DOWN = 1
 UP = 0
 HOLD = 2
@@ -24,10 +23,9 @@ STOCK_LEDS = [
 ]
 from .misc import ContextDict
 
+
 def default_evread(e: evdev.KeyEvent, ctx: ContextDict):
 
-    
-    
     if e.scancode == ecodes.KEY_UP:
         ctx.evqueue.put((ecodes.EV_KEY, ecodes.KEY_W, e.keystate))
     if e.scancode == ecodes.KEY_DOWN:
@@ -37,7 +35,6 @@ def default_evread(e: evdev.KeyEvent, ctx: ContextDict):
     if e.scancode == ecodes.KEY_RIGHT:
         ctx.evqueue.put((ecodes.EV_KEY, ecodes.KEY_D, e.keystate))
 
-    
 
 ## LED idle loop for anti cheat circumvention, and asthetics
 ## TODO: Make the time interval a gaussian distribution around mu of 0.25

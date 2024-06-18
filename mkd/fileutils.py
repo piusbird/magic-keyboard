@@ -40,17 +40,18 @@ def get_config(U_path: str):
     else:
         return None
 
+
 def read_script(u_path: str):
 
     with open(os.path.expanduser(u_path), "r") as f:
         code = f.read()
-        
+
     try:
-        ocode = compile(code, u_path, 'exec')
+        ocode = compile(code, u_path, "exec")
         return 0, code
     except SyntaxError as e:
         return 1, str(e)
-    except ValueError as e: 
+    except ValueError as e:
         return 2, str(e)
 
 
