@@ -1,8 +1,15 @@
 import evdev
 from evdev import ecodes
-def mk_evread(e: evdev.KeyEvent):
-    global active_config
-    global evqueue
+
+class ContextDict(dict):
+    __getattr__ = dict.__getitem__
+    __setattr__ = dict.__setitem__
+    __delattr__ = dict.__delitem__
+
+def mk_evread(e: evdev.KeyEvent, ctx: ContextDict):
+    active_config = ctx.active_config
+    evqueue = ctx.evqueue
+    send_notice = ctx.send_notice
     if active_config.get("idle_bounce") == None:
         active_config["idle_bounce"] = False
 

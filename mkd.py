@@ -52,6 +52,7 @@ from mkd.evdev import (
     leds_loop,
     default_evread,
 )
+from mkd.misc import ContextDict, LostDeviceError
 
 stop_flag = threading.Event()
 halt_in_progress = threading.Event()
@@ -121,6 +122,7 @@ def main():
 
 
 def daemon_main(cfig):
+    print(str(dispatch_event))
     global active_config
     global current_device
     Notify.init("Magic Keyboard")
@@ -144,12 +146,14 @@ def daemon_main(cfig):
 
     lisnr = threading.Thread(target=uds_thread, args=(sock,))
     vinput_t = threading.Thread(target=uinput_thread, args=(evqueue,))
+    lisnr.daemon = True
+    vinput_t.daemon = True
+
+    error_flag = 0
     while not stop_flag.is_set():
         if not lisnr.is_alive() and not halt_in_progress.is_set():
-            lisnr = threading.Thread(target=uds_thread, args=(sock,))
             lisnr.start()
         if not vinput_t.is_alive() and not halt_in_progress.is_set():
-            vinput_t = threading.Thread(target=uinput_thread, args=(evqueue,))
             vinput_t.start()
         if halt_in_progress.is_set():
             break
@@ -161,20 +165,51 @@ def daemon_main(cfig):
             current_device.grab()
         except OSError:
             pass
-        event = current_device.read_one()
+        try:
+            os.fstat(current_device.fd)
+        except OSError:
+            sys.stderr.write("Lost Device")
+            error_flag = 1
+            break
+        # We're not making a [] but we're checking this
+        # twice Need to find out if we lost the device
+        # Saint Thomas  is coming to town
+        # he sees pids when they're sleeping
+        # he knows they want to wake
+        # he knows zombies are not good 
+        # so a zombie let's not make
+        try: 
+            event = current_device.read_one()
+        except OSError:
+            sys.stderr.write("Lost Device")
+            error_flag = 1
+            break
+
+        ctx = ContextDict()
+        ctx['evqueue'] = evqueue
+        ctx['active_config'] = active_config
         if event is not None:
             if event.type == ecodes.EV_KEY:
-                dispatch_event(evdev.util.categorize(event))
+                dispatch_event(evdev.util.categorize(event), ctx)
         else:
             # this is just a visual indicator that the main thread is awake
             # could also be useful in anti cheat circumvention
             # TODO: Put this in a config varaible
 
             if evqueue.empty() and active_config["idle_bounce"]:
-                if len(current_device.leds()) == 0:
-                    leds_loop(current_device, True)
-                else:
-                    leds_loop(current_device, False)
+                try:
+                    if len(current_device.leds()) == 0:
+                        leds_loop(current_device, True)
+                    else:
+                        leds_loop(current_device, False)
+                except Exception as e:
+                    sys.stderr.write(str(e))
+                    error_flag = 1
+                    break
+    
+    if error_flag != 0:
+        send_notice("breakout due to error, see log for more")
+    
     send_notice("Shutting Down")
     Notify.uninit()
     vinput_t.join(5)
@@ -192,10 +227,10 @@ def daemon_main(cfig):
     except Exception as e:
         sys.stderr.write(str(e))
         ourpid = os.getpgid()
-        os.killpg(ourpid, 11)  # this stops it RIGHT THE FORK NOW
+        os.killpg(ourpid, 9)  # this stops it RIGHT THE FORK NOW
     sock.close()
     do_cleanup()
-    sys.exit(0)
+    sys.exit(1)
 
 
 def startup_proc(devices, target_device):
@@ -241,8 +276,14 @@ def uds_thread(sock):
     global current_device
     if stop_flag.is_set():  # we don't want to cause problems in cleanup
         return
+    try:
 
-    connection, client_address = sock.accept()
+        connection, client_address = sock.accept()
+    except OSError as e:
+        sys.stderr.write("Socket cleanup happened SHUTDOWN NOW")
+        halt_in_progress.set()
+        stop_flag.set()
+        raise HaltRequested("HALT EMERGENCY")
     data = connection.recv(256)
     sdata = data.decode("utf-8")
 

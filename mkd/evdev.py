@@ -6,6 +6,9 @@ from time import sleep
 import evdev
 from evdev import ecodes, InputDevice
 from queue import Queue
+from .misc import LostDeviceError
+
+
 
 DOWN = 1
 UP = 0
@@ -19,20 +22,20 @@ STOCK_LEDS = [
     (ecodes.LED_CAPSL, OFF),
     (ecodes.LED_SCROLLL, OFF),
 ]
+from .misc import ContextDict
 
-def default_evread(e: evdev.KeyEvent):
-    global active_config
-    global evqueue
+def default_evread(e: evdev.KeyEvent, ctx: ContextDict):
+
     
     
     if e.scancode == ecodes.KEY_UP:
-        evqueue.put((ecodes.EV_KEY, ecodes.KEY_W, e.keystate))
+        ctx.evqueue.put((ecodes.EV_KEY, ecodes.KEY_W, e.keystate))
     if e.scancode == ecodes.KEY_DOWN:
-        evqueue.put((ecodes.EV_KEY, ecodes.KEY_S, e.keystate))
+        ctx.evqueue.put((ecodes.EV_KEY, ecodes.KEY_S, e.keystate))
     if e.scancode == ecodes.KEY_LEFT:
-        evqueue.put((ecodes.EV_KEY, ecodes.KEY_A, e.keystate))
+        ctx.evqueue.put((ecodes.EV_KEY, ecodes.KEY_A, e.keystate))
     if e.scancode == ecodes.KEY_RIGHT:
-        evqueue.put((ecodes.EV_KEY, ecodes.KEY_D, e.keystate))
+        ctx.evqueue.put((ecodes.EV_KEY, ecodes.KEY_D, e.keystate))
 
     
 
@@ -43,15 +46,27 @@ def leds_loop(dev: InputDevice, hack: bool):
     leds = dev.leds(verbose=True)
     if not hack:
         for light in reversed(leds):
-            dev.set_led(ecodes.ecodes[light[0]], ON)
+            try:
+                dev.set_led(ecodes.ecodes[light[0]], ON)
+            except OSError as e:
+                raise LostDeviceError("Lost device")
             sleep(0.25)
-            dev.set_led(ecodes.ecodes[light[0]], OFF)
+            try:
+                dev.set_led(ecodes.ecodes[light[0]], OFF)
+            except OSError as e:
+                raise LostDeviceError("Lost Device")
             sleep(0.25)
     else:
         for light in reversed(STOCK_LEDS):
-            dev.set_led(light[0], ON)
+            try:
+                dev.set_led(light[0], ON)
+            except OSError:
+                raise LostDeviceError("Lost Device")
             sleep(0.25)
-            dev.set_led(light[0], OFF)
+            try:
+                dev.set_led(light[0], OFF)
+            except OSError:
+                raise LostDeviceError("Lost Device")
             sleep(0.20)
 
 
