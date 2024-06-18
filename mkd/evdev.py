@@ -20,6 +20,21 @@ STOCK_LEDS = [
     (ecodes.LED_SCROLLL, OFF),
 ]
 
+def default_evread(e: evdev.KeyEvent):
+    global active_config
+    global evqueue
+    
+    
+    if e.scancode == ecodes.KEY_UP:
+        evqueue.put((ecodes.EV_KEY, ecodes.KEY_W, e.keystate))
+    if e.scancode == ecodes.KEY_DOWN:
+        evqueue.put((ecodes.EV_KEY, ecodes.KEY_S, e.keystate))
+    if e.scancode == ecodes.KEY_LEFT:
+        evqueue.put((ecodes.EV_KEY, ecodes.KEY_A, e.keystate))
+    if e.scancode == ecodes.KEY_RIGHT:
+        evqueue.put((ecodes.EV_KEY, ecodes.KEY_D, e.keystate))
+
+    
 
 ## LED idle loop for anti cheat circumvention, and asthetics
 ## TODO: Make the time interval a gaussian distribution around mu of 0.25

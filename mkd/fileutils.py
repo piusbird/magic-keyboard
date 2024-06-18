@@ -33,12 +33,26 @@ def get_config(U_path: str):
         try:
             cfig_data = tomllib.load(fp)
         except tomllib.TOMLDecodeError:
-            cfig_data = {}
+            cfig_data = None
         finally:
             fp.close()
         return cfig_data
     else:
-        return {}
+        return None
+
+def read_script(u_path: str):
+
+    with open(os.path.expanduser(u_path), "r") as f:
+        code = f.read()
+        
+    try:
+        ocode = compile(code, u_path, 'exec')
+        exec(ocode)
+        return 0, ""
+    except SyntaxError as e:
+        return 1, str(e)
+    except ValueError as e: 
+        return 2, str(e)
 
 
 class HaltRequested(Exception):

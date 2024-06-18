@@ -41,7 +41,7 @@ import syslog
 import multiprocessing
 from evdev import InputDevice, categorize, ecodes, UInput
 from mkd.ioutils import NullFile, SyslogFile
-from mkd.fileutils import write_pid, pid_lock, get_config, HaltRequested
+from mkd.fileutils import write_pid, pid_lock, get_config, read_script, HaltRequested
 from mkd.evdev import (
     syn_key_press,
     syn_key_hold,
@@ -50,6 +50,7 @@ from mkd.evdev import (
     release_device,
     STOP_VALUE,
     leds_loop,
+    default_evread,
 )
 
 stop_flag = threading.Event()
@@ -61,13 +62,29 @@ actual_send_notice = lambda m: Notify.Notification.new(
     "magic-keyboard", m, "dialog-information"
 ).show()
 current_device = None
+dispatch_event = None
 
 
 def main():
+    global dispatch_event
     if os.getuid() == 0 or os.geteuid == 0:
         print("Do not run me as root, add urself to input")
         exit(0x0F)
     cfig = get_config("~/.mkd.conf")
+    if cfig == None:
+        print("Config Syntax Error")
+        exit(2)
+    if cfig.get("layout_file"):
+        status, errors  = read_script(cfig["script_file"])
+        if status == 0:
+            dispatch_event = mk_evread
+        else:
+            print("Syntax error in script file\n" + errors)
+            exit(status)
+        
+    else:
+        print("layout file not found falling back to default")
+        dispatch_event = default_evread
     print("Config Values")
     for k, v in cfig.items():
         print(k + ": " + str(v))
@@ -255,37 +272,6 @@ def uds_thread(sock):
             connection.close()
 
 
-def dispatch_event(e: evdev.KeyEvent):
-    global active_config
-    global evqueue
-    if active_config.get("idle_bounce") == None:
-        active_config["idle_bounce"] = False
-
-    presses = [ecodes.KEY_P, ecodes.KEY_I, ecodes.KEY_U, ecodes.KEY_S]
-    if active_config.get("mirror_jacket"):
-        if e.scancode == ecodes.KEY_UP:
-            evqueue.put((ecodes.EV_KEY, ecodes.KEY_W, e.keystate))
-        if e.scancode == ecodes.KEY_DOWN:
-            evqueue.put((ecodes.EV_KEY, ecodes.KEY_S, e.keystate))
-        if e.scancode == ecodes.KEY_LEFT:
-            evqueue.put((ecodes.EV_KEY, ecodes.KEY_A, e.keystate))
-        if e.scancode == ecodes.KEY_RIGHT:
-            evqueue.put((ecodes.EV_KEY, ecodes.KEY_D, e.keystate))
-
-    if (e.keystate == e.key_up) and e.scancode == ecodes.KEY_F2:
-        send_notice("Tea Time")
-        active_config["idle_bounce"] = not active_config["idle_bounce"]
-    if (e.keystate == e.key_up) and e.scancode == ecodes.KEY_M:
-        send_notice("Mirror Jacket On")
-        active_config["mirror_jacket"] = 1
-    if (e.keystate == e.key_up) and e.scancode == ecodes.KEY_Q:
-        active_config["mirror_jacket"] = 0
-        send_notice("Mirror Jacket off")
-
-    if (e.keystate == e.key_down) and e.scancode == ecodes.KEY_P:
-        send_notice("Party Time, conga line")
-        for k in presses:
-            syn_key_press(k, evqueue)
 
 
 def handle_sigterm(num, fr):
