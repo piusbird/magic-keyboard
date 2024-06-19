@@ -29,6 +29,7 @@ import queue
 import tomllib
 import syslog
 import signal
+from math import ceil, floor
 from time import sleep
 import socket
 import threading
@@ -51,6 +52,7 @@ from mkd.evdev import (
     STOP_VALUE,
     leds_loop,
     default_evread,
+    Emulated_Device,
 )
 from mkd.misc import ContextDict, LostDeviceError
 
@@ -71,7 +73,10 @@ def main():
     if os.getuid() == 0 or os.geteuid == 0:
         print("Do not run me as root, add urself to input")
         exit(0x0F)
-    cfig = get_config("~/.mkd.conf")
+    if os.path.exists(os.path.abspath("./mkd.conf")):
+        cfig = get_config(os.path.abspath("./mkd.conf"))
+    else:
+        cfig = get_config("~/.mkd.conf")
     if cfig == None:
         print("Config Syntax Error")
         exit(2)
@@ -163,6 +168,9 @@ def daemon_main(cfig):
         script_context["evqueue"] = evqueue
         script_context["active_config"] = active_config
         script_context["send_notice"] = send_notice
+        script_context["ceil"] = ceil
+        script_context["floor"] = floor
+        script_context["active_keys"] = None
         if halt_in_progress.is_set():
             break
         if not lisnr.is_alive() and not halt_in_progress.is_set():
@@ -191,6 +199,7 @@ def daemon_main(cfig):
         # he knows they want to wake
         # he knows zombies are not good
         # so a zombie let's not make
+        script_context.active_keys = current_device.active_keys()
         try:
             event = current_device.read_one()
         except OSError:
@@ -200,7 +209,10 @@ def daemon_main(cfig):
 
         if event is not None:
             if event.type == ecodes.EV_KEY:
-                dispatch_event(evdev.util.categorize(event), script_context)
+                rt = dispatch_event(evdev.util.categorize(event), script_context)
+                if rt != None:
+                    script_context = rt
+
         else:
             # this is just a visual indicator that the main thread is awake
             # could also be useful in anti cheat circumvention
@@ -267,7 +279,13 @@ def uinput_thread(evqueue):
         raise HaltRequested("Halt")
     Notify.init("mkd Vinput")
 
-    ui = UInput()
+    ui = UInput(
+        events=Emulated_Device.events,
+        name=Emulated_Device.name,
+        product=Emulated_Device.product,
+        vendor=Emulated_Device.vendor,
+        version=Emulated_Device.version,
+    )
     send_notice("input synth ready")
     while not stop_flag.is_set():
         if halt_in_progress.is_set():

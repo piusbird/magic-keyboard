@@ -2,6 +2,7 @@
 Where all the evdev related functions go
 """
 
+from math import ceil, floor
 from time import sleep
 import evdev
 from evdev import ecodes, InputDevice
@@ -23,9 +24,34 @@ STOCK_LEDS = [
 ]
 from .misc import ContextDict
 
+__devname = "sorcery-usb-keyboard"
+__vendor = 0x0C
+__product = 0x71
+__version = 0x01
+
+
+__target_events = {
+    ecodes.EV_KEY: ecodes.keys.keys(),
+    ecodes.EV_REL: [
+        ecodes.REL_X,
+        ecodes.REL_Y,
+        ecodes.REL_WHEEL,
+        ecodes.REL_WHEEL_HI_RES,
+        ecodes.REL_HWHEEL,
+        ecodes.REL_HWHEEL_HI_RES,
+    ],
+}
+
+Emulated_Device = ContextDict()
+
+Emulated_Device["name"] = __devname
+Emulated_Device["vendor"] = __vendor
+Emulated_Device["product"] = __product
+Emulated_Device["version"] = __version
+Emulated_Device["events"] = __target_events
+
 
 def default_evread(e: evdev.KeyEvent, ctx: ContextDict):
-
     if e.scancode == ecodes.KEY_UP:
         ctx.evqueue.put((ecodes.EV_KEY, ecodes.KEY_W, e.keystate))
     if e.scancode == ecodes.KEY_DOWN:
