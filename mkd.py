@@ -26,27 +26,17 @@
 import sys
 import os
 import queue
-import tomllib
 import syslog
 import signal
 from math import ceil, floor
-from time import sleep
 import socket
 import threading
 import gi
-
-gi.require_version("Notify", "0.7")
-from gi.repository import Notify, GLib
 import evdev
-import syslog
-import multiprocessing
-from evdev import InputDevice, categorize, ecodes, UInput
+from evdev import ecodes, UInput
 from mkd.ioutils import NullFile, SyslogFile
 from mkd.fileutils import write_pid, pid_lock, get_config, read_script, HaltRequested
 from mkd.evdev import (
-    syn_key_press,
-    syn_key_hold,
-    syn_key_release,
     activate_device,
     release_device,
     STOP_VALUE,
@@ -54,18 +44,23 @@ from mkd.evdev import (
     default_evread,
     Emulated_Device,
 )
-from mkd.misc import ContextDict, LostDeviceError
+from mkd.misc import ContextDict
+
+gi.require_version("Notify", "0.7")
+from gi.repository import Notify  # noqa
 
 stop_flag = threading.Event()
 halt_in_progress = threading.Event()
 evqueue = queue.Queue()
 active_config = None
 daemon_tmpfiles = ["~/.mkd.sock", "~/.mkd.pid"]
-actual_send_notice = lambda m: Notify.Notification.new(
-    "magic-keyboard", m, "dialog-information"
-).show()
+
 current_device = None
 dispatch_event = None
+
+
+def actual_send_notice(m):
+    return Notify.Notification.new("magic-keyboard", m, "dialog-information").show()
 
 
 def main():
@@ -77,13 +72,12 @@ def main():
         cfig = get_config(os.path.abspath("./mkd.conf"))
     else:
         cfig = get_config("~/.mkd.conf")
-    if cfig == None:
+    if cfig is None:
         print("Config Syntax Error")
         exit(2)
     if cfig.get("layout_file"):
         status, errors = read_script(cfig["layout_file"])
         if status == 0:
-
             exec(compile(errors, "layout", "exec"))
             print(vars)
             if "mk_evread" in vars():
@@ -111,7 +105,7 @@ def main():
                     print(d)
             case "foreground":
                 daemon_main(cfig)
-            case other:
+            case _:
                 print("Unknown Subcommand")
 
         exit(0)
@@ -210,7 +204,7 @@ def daemon_main(cfig):
         if event is not None:
             if event.type == ecodes.EV_KEY:
                 rt = dispatch_event(evdev.util.categorize(event), script_context)
-                if rt != None:
+                if rt is None:
                     script_context = rt
 
         else:
@@ -291,7 +285,7 @@ def uinput_thread(evqueue):
         if halt_in_progress.is_set():
             raise HaltRequested("Halt")
         keydata = evqueue.get()
-        if type(keydata) == int and keydata == STOP_VALUE:
+        if isinstance(keydata, int) and keydata == STOP_VALUE:
             break
         ui.write(*keydata)
         ui.syn()
@@ -307,9 +301,8 @@ def uds_thread(sock):
     if stop_flag.is_set():  # we don't want to cause problems in cleanup
         return
     try:
-
         connection, client_address = sock.accept()
-    except OSError as e:
+    except OSError:
         sys.stderr.write("Socket cleanup happened SHUTDOWN NOW")
         halt_in_progress.set()
         stop_flag.set()
@@ -338,7 +331,7 @@ def uds_thread(sock):
             connection.sendall("OK\n")
             pid = os.getpid()
             os.kill(pid, signal.SIGTERM)
-        case other:
+        case _:
             connection.sendall(b"unknown command\n")
             connection.close()
 

@@ -2,13 +2,13 @@
 Where all the evdev related functions go
 """
 
-from math import ceil, floor
+from math import ceil, floor  # noqa
 from time import sleep
 import evdev
 from evdev import ecodes, InputDevice
 from queue import Queue
 from .misc import LostDeviceError
-
+from .misc import ContextDict
 
 DOWN = 1
 UP = 0
@@ -22,7 +22,7 @@ STOCK_LEDS = [
     (ecodes.LED_CAPSL, OFF),
     (ecodes.LED_SCROLLL, OFF),
 ]
-from .misc import ContextDict
+
 
 __devname = "sorcery-usb-keyboard"
 __vendor = 0x0C
@@ -71,12 +71,12 @@ def leds_loop(dev: InputDevice, hack: bool):
         for light in reversed(leds):
             try:
                 dev.set_led(ecodes.ecodes[light[0]], ON)
-            except OSError as e:
+            except OSError:
                 raise LostDeviceError("Lost device")
             sleep(0.25)
             try:
                 dev.set_led(ecodes.ecodes[light[0]], OFF)
-            except OSError as e:
+            except OSError:
                 raise LostDeviceError("Lost Device")
             sleep(0.25)
     else:

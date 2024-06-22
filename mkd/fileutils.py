@@ -19,10 +19,8 @@ def pid_lock(U_path):
         if os.path.exists(os.path.join("/proc", target_pid)):
             return True
         else:
-
             return False
     else:
-
         return False
 
 
@@ -42,12 +40,11 @@ def get_config(U_path: str):
 
 
 def read_script(u_path: str):
-
     with open(os.path.expanduser(u_path), "r") as f:
         code = f.read()
 
     try:
-        ocode = compile(code, u_path, "exec")
+        _ = compile(code, u_path, "exec")
         return 0, code
     except SyntaxError as e:
         return 1, str(e)

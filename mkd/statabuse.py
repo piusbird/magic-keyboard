@@ -1,9 +1,9 @@
 """
 Here is the module where i abuse stats to calcualate
 various input delays and things
-The point of this project is to go at simulate human speeds. 
+The point of this project is to go at simulate human speeds.
 Under Normal circumstances. This is an accomidation device, not intended
-to give super powers usually. The user will be able to configure the simulation 
+to give super powers usually. The user will be able to configure the simulation
 to their liking, or turn it off entirely
 """
 

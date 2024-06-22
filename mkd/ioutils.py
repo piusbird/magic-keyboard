@@ -20,8 +20,8 @@ class SyslogFile:
     """
 
     def write(self, msg):
-        if type(msg) == str:
+        if isinstance(msg, str):
             real = msg
-        elif type(msg) == bytes:
+        elif isinstance(msg, bytes):
             real = msg.decode("utf-8")
         syslog.syslog(syslog.LOG_DEBUG, real)
